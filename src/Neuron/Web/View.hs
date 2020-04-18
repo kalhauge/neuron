@@ -80,14 +80,14 @@ mkSearchQuery site@Site { siteSearch } terms tags =
 mkSingleTagQuery :: Site -> Tag -> Text
 mkSingleTagQuery site tag = mkSearchQuery site Nothing [tag]
 
-renderRouteHead :: Monad m => Config -> Route store graph a -> store -> HtmlT m ()
+renderRouteHead :: Monad m => Config -> Route store graph -> store -> HtmlT m ()
 renderRouteHead config r val = do
   meta_ [httpEquiv_ "Content-Type", content_ "text/html; charset=utf-8"]
   meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1"]
   title_ $ toHtml $ routeTitle config val r
   link_ [rel_ "shortcut icon", href_ "https://raw.githubusercontent.com/srid/neuron/master/assets/logo.ico"]
   case r of
-    Route_Redirect _ ->
+    Route_Redirect _ _ ->
       mempty
     Route_Search {} -> do
       with (script_ mempty) [src_ "https://cdn.jsdelivr.net/npm/jquery@3.5.0/dist/jquery.min.js"]
@@ -97,8 +97,8 @@ renderRouteHead config r val = do
       toHtml $ routeOpenGraph config val r
       style_ [type_ "text/css"] $ styleToCss tango
 
-renderRouteBody :: Monad m => Site -> Config -> Route store graph a -> (store, graph, a) -> HtmlT m ()
-renderRouteBody site@Site { siteZettel } config r (s, g, x) = do
+renderRouteBody :: Monad m => Site -> Config -> Route store graph -> (store, graph) -> HtmlT m ()
+renderRouteBody site@Site { siteZettel } config r (s, g) = do
   case r of
     Route_ZIndex ->
       renderIndex site config (s, g)
@@ -106,7 +106,7 @@ renderRouteBody site@Site { siteZettel } config r (s, g, x) = do
       renderSearch s
     Route_Zettel zid ->
       renderZettel site config (s, g) zid
-    Route_Redirect _ ->
+    Route_Redirect _ x ->
       meta_ [httpEquiv_ "Refresh", content_ $ "0; url=" <> Rib.localUrlRel (siteZettel Map.! x)]
 
 renderIndex :: Monad m => Site -> Config -> (ZettelStore, ZettelGraph) -> HtmlT m ()

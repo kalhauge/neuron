@@ -24,15 +24,15 @@ import Rib.Site
 import qualified Rib.Parser.MMark as MMark
 import qualified Text.URI as URI
 
-data Route store graph a where
-  Route_Redirect :: ZettelID -> Route ZettelStore ZettelGraph ZettelID
-  Route_ZIndex :: Route ZettelStore ZettelGraph ()
-  Route_Search :: Route ZettelStore ZettelGraph ()
-  Route_Zettel :: ZettelID -> Route ZettelStore ZettelGraph ()
+data Route store graph where
+  Route_Redirect :: ZettelID -> ZettelID -> Route ZettelStore ZettelGraph 
+  Route_ZIndex :: Route ZettelStore ZettelGraph 
+  Route_Search :: Route ZettelStore ZettelGraph 
+  Route_Zettel :: ZettelID -> Route ZettelStore ZettelGraph 
 
-routeFile :: Route store graph a -> FilePath
+routeFile :: Route store graph -> FilePath
 routeFile = \case
-  Route_Redirect zid ->
+  Route_Redirect zid _ ->
     routeFile $ Route_Zettel zid
   Route_ZIndex ->
     "z-index.html"
@@ -49,7 +49,7 @@ data Site =
   }
 
 -- | Return full title for a route
-routeTitle :: Config -> store -> Route store graph a -> Text
+routeTitle :: Config -> store -> Route store graph -> Text
 routeTitle Config {..} store =
   withSuffix siteTitle . routeTitle' store
   where
@@ -59,21 +59,21 @@ routeTitle Config {..} store =
         else x <> " - " <> suffix
 
 -- | Return the title for a route
-routeTitle' :: store -> Route store graph a -> Text
+routeTitle' :: store -> Route store graph -> Text
 routeTitle' store = \case
-  Route_Redirect _ -> "Redirecting..."
+  Route_Redirect _ _ -> "Redirecting..."
   Route_ZIndex -> "Zettel Index"
   Route_Search -> "Search"
   Route_Zettel (flip lookupStore store -> Zettel {..}) ->
     zettelTitle
 
-routeOpenGraph :: Config -> store -> Route store graph a -> OpenGraph
+routeOpenGraph :: Config -> store -> Route store graph -> OpenGraph
 routeOpenGraph Config {..} store r =
   OpenGraph
     { _openGraph_title = routeTitle' store r,
       _openGraph_siteName = siteTitle,
       _openGraph_description = case r of
-        Route_Redirect _ -> Nothing
+        Route_Redirect _ _ -> Nothing
         Route_ZIndex -> Just "Zettelkasten Index"
         Route_Search -> Just "Search Zettelkasten"
         Route_Zettel (flip lookupStore store -> Zettel {..}) ->

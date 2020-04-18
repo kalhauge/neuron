@@ -29,10 +29,9 @@ import qualified Rib.Site as Rib
 -- | Generate the Zettelkasten site
 generateSite ::
   Z.Config ->
-  (forall a. 
-    Z.Site
-    -> Z.Route Z.ZettelStore Z.ZettelGraph a 
-    -> (Z.ZettelStore, Z.ZettelGraph, a) 
+  ( Z.Site
+    -> Z.Route Z.ZettelStore Z.ZettelGraph
+    -> (Z.ZettelStore, Z.ZettelGraph) 
     -> Action TL.Text) ->
   [FilePath] ->
   Action (Z.ZettelStore, Z.ZettelGraph)
@@ -45,21 +44,21 @@ generateSite config writeHtmlRoute' zettelsPat = do
   let zettelGraph = Z.mkZettelGraph zettelStore
   
   Rib.runSiteGen $ do 
-    let makeLocalRoute v r = Rib.makeLocalUrl (Z.routeFile r) $ \site -> 
-          writeHtmlRoute' site r (zettelStore, zettelGraph, v)
+    let makeLocalRoute r = Rib.makeLocalUrl (Z.routeFile r) $ \site -> 
+          writeHtmlRoute' site r (zettelStore, zettelGraph)
 
     -- Generate HTML for every zettel
     siteZettel' <- forM (Map.keys zettelStore) $ \zid -> 
-      (zid,) <$> makeLocalRoute () (Z.Route_Zettel zid)
+      (zid,) <$> makeLocalRoute (Z.Route_Zettel zid)
     -- Generate the z-index
-    siteZIndex <- makeLocalRoute () Z.Route_ZIndex
+    siteZIndex <- makeLocalRoute Z.Route_ZIndex
     -- Generate search page
-    siteSearch <- makeLocalRoute () Z.Route_Search
+    siteSearch <- makeLocalRoute Z.Route_Search
     -- Write alias redirects, unless a zettel with that name exists.
     aliases <- Z.getAliases config zettelStore
     
     siteZettelAliases' <- forM aliases $ \Z.Alias {..} ->
-      (aliasZettel,) <$> makeLocalRoute targetZettel (Z.Route_Redirect aliasZettel)
+      (aliasZettel,) <$> makeLocalRoute (Z.Route_Redirect aliasZettel targetZettel)
 
     pure $ Z.Site
       { siteZIndex = siteZIndex

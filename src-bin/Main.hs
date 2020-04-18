@@ -29,16 +29,16 @@ generateMainSite :: Action ()
 generateMainSite = do
   Rib.buildStaticFiles ["static/**"]
   config <- Config.getConfig
-  let writeHtmlRoute :: Site -> Route s g a -> (s, g, a) -> Action TL.Text
+  let writeHtmlRoute :: Site -> Route s g -> (s, g) -> Action TL.Text
       writeHtmlRoute site r = pure . Lucid.renderText . renderPage site config r
   void $ generateSite config writeHtmlRoute ["*.md"]
 
-renderPage :: Site -> Config -> Route s g a -> (s, g, a) -> Html ()
-renderPage site config r val@(s, _, _) = html_ [lang_ "en"] $ do
+renderPage :: Site -> Config -> Route s g -> (s, g) -> Html ()
+renderPage site config r val@(s, _) = html_ [lang_ "en"] $ do
   head_ $ do
     renderRouteHead config r s
     case r of
-      Route_Redirect _ ->
+      Route_Redirect _ _ ->
         mempty
       _ -> do
         stylesheet "https://cdn.jsdelivr.net/npm/semantic-ui@2.4.2/dist/semantic.min.css"
