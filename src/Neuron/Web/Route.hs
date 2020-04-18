@@ -19,8 +19,8 @@ import Neuron.Zettelkasten.ID
 import Neuron.Zettelkasten.Store
 import Neuron.Zettelkasten.Zettel
 import Relude
-import Rib (IsRoute (..))
 import Rib.Extra.OpenGraph
+import Rib.Site
 import qualified Rib.Parser.MMark as MMark
 import qualified Text.URI as URI
 
@@ -30,16 +30,23 @@ data Route store graph a where
   Route_Search :: Route ZettelStore ZettelGraph ()
   Route_Zettel :: ZettelID -> Route ZettelStore ZettelGraph ()
 
-instance IsRoute (Route store graph) where
-  routeFile = \case
-    Route_Redirect zid ->
-      routeFile $ Route_Zettel zid
-    Route_ZIndex ->
-      pure "z-index.html"
-    Route_Search -> do
-      pure "search.html"
-    Route_Zettel (zettelIDText -> s) ->
-      pure $ toString s <> ".html"
+routeFile :: Route store graph a -> FilePath
+routeFile = \case
+  Route_Redirect zid ->
+    routeFile $ Route_Zettel zid
+  Route_ZIndex ->
+    "z-index.html"
+  Route_Search -> do
+    "search.html"
+  Route_Zettel (zettelIDText -> s) ->
+    toString s <> ".html"
+
+data Site =
+  Site 
+  { siteZIndex :: LocalUrl
+  , siteSearch :: LocalUrl
+  , siteZettel :: Map ZettelID LocalUrl
+  }
 
 -- | Return full title for a route
 routeTitle :: Config -> store -> Route store graph a -> Text

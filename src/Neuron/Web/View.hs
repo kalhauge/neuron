@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | HTML & CSS
 module Neuron.Web.View where
@@ -23,6 +24,7 @@ import Data.Aeson ((.=), object)
 import qualified Data.Aeson.Text as Aeson
 import Data.FileEmbed (embedStringFile)
 import Data.Foldable (maximum)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Tree (Tree (..))
 import Lucid
@@ -41,7 +43,7 @@ import Neuron.Zettelkasten.Store
 import Neuron.Zettelkasten.Tag (Tag (..))
 import Neuron.Zettelkasten.Zettel
 import Relude
-import qualified Rib
+import qualified Rib.Site as Rib
 import Rib.Extra.CSS (mozillaKbdStyle)
 import qualified Rib.Parser.MMark as MMark
 import Text.MMark (useExtensions)
@@ -55,12 +57,12 @@ searchScript = $(embedStringFile "./src-js/search.js")
 helloScript :: Text
 helloScript = $(embedStringFile "./src-purescript/hello/index.js")
 
-mkSearchURI :: MonadThrow m => Maybe Text -> [Tag] -> m URI
-mkSearchURI terms tags = do
+mkSearchURI :: MonadThrow m => Site -> Maybe Text -> [Tag] -> m URI
+mkSearchURI Site { siteSearch } terms tags = do
   let mkParam k v = URI.QueryParam <$> URI.mkQueryKey k <*> URI.mkQueryValue v
       qParams = maybeToList (fmap (mkParam "q") terms)
       tagParams = fmap (mkParam "tag" . unTag) tags
-  route <- URI.mkPathPiece (Rib.routeUrlRel Route_Search)
+  route <- URI.mkPathPiece (Rib.localUrlRel siteSearch)
   params <- sequenceA (qParams ++ tagParams)
   pure
     emptyURI
@@ -69,14 +71,14 @@ mkSearchURI terms tags = do
       }
 
 -- TODO: render error message when the query is invalid
-mkSearchQuery :: Maybe Text -> [Tag] -> Text
-mkSearchQuery terms tags =
+mkSearchQuery :: Site -> Maybe Text -> [Tag] -> Text
+mkSearchQuery site@Site { siteSearch } terms tags =
   fromMaybe
-    (Rib.routeUrlRel Route_Search)
-    (URI.render <$> mkSearchURI terms tags)
+    (Rib.localUrlRel siteSearch)
+    (URI.render <$> mkSearchURI site terms tags)
 
-mkSingleTagQuery :: Tag -> Text
-mkSingleTagQuery tag = mkSearchQuery Nothing [tag]
+mkSingleTagQuery :: Site -> Tag -> Text
+mkSingleTagQuery site tag = mkSearchQuery site Nothing [tag]
 
 renderRouteHead :: Monad m => Config -> Route store graph a -> store -> HtmlT m ()
 renderRouteHead config r val = do
@@ -95,20 +97,20 @@ renderRouteHead config r val = do
       toHtml $ routeOpenGraph config val r
       style_ [type_ "text/css"] $ styleToCss tango
 
-renderRouteBody :: Monad m => Config -> Route store graph a -> (store, graph, a) -> HtmlT m ()
-renderRouteBody config r (s, g, x) = do
+renderRouteBody :: Monad m => Site -> Config -> Route store graph a -> (store, graph, a) -> HtmlT m ()
+renderRouteBody site@Site { siteZettel } config r (s, g, x) = do
   case r of
     Route_ZIndex ->
-      renderIndex config (s, g)
+      renderIndex site config (s, g)
     Route_Search {} ->
       renderSearch s
     Route_Zettel zid ->
-      renderZettel config (s, g) zid
+      renderZettel site config (s, g) zid
     Route_Redirect _ ->
-      meta_ [httpEquiv_ "Refresh", content_ $ "0; url=" <> (Rib.routeUrlRel $ Route_Zettel x)]
+      meta_ [httpEquiv_ "Refresh", content_ $ "0; url=" <> Rib.localUrlRel (siteZettel Map.! x)]
 
-renderIndex :: Monad m => Config -> (ZettelStore, ZettelGraph) -> HtmlT m ()
-renderIndex Config {..} (store, graph) = do
+renderIndex :: Monad m => Site -> Config -> (ZettelStore, ZettelGraph) -> HtmlT m ()
+renderIndex site Config {..} (store, graph) = do
   let neuronTheme = Theme.mkTheme theme
   h1_ [class_ "header"] $ "Zettel Index"
   div_ [class_ "z-index"] $ do
@@ -117,7 +119,7 @@ renderIndex Config {..} (store, graph) = do
       Left (toList -> cyc) -> div_ [class_ "ui orange segment"] $ do
         h2_ "Cycle detected"
         forM_ cyc $ \zid ->
-          li_ $ renderZettelLink LinkTheme_Default store zid
+          li_ $ renderZettelLink site LinkTheme_Default store zid
       _ -> mempty
     let clusters = sortMothers $ zettelClusters graph
     p_ $ do
@@ -127,7 +129,7 @@ renderIndex Config {..} (store, graph) = do
       div_ [class_ $ "ui stacked " <> Theme.semanticColor neuronTheme <> " segment"] $ do
         let forest = dfsForestFrom zids graph
         -- Forest of zettels, beginning with mother vertices.
-        ul_ $ renderForest True Nothing LinkTheme_Default store graph forest
+        ul_ $ renderForest site True Nothing LinkTheme_Default store graph forest
     renderBrandFooter True
   -- See ./src-purescript/hello/README.md
   script_ helloScript
@@ -160,8 +162,8 @@ renderSearch store = do
   script_ $ "let index = " <> toText (Aeson.encodeToLazyText index) <> ";"
   script_ searchScript
 
-renderZettel :: forall m. Monad m => Config -> (ZettelStore, ZettelGraph) -> ZettelID -> HtmlT m ()
-renderZettel config@Config {..} (store, graph) zid = do
+renderZettel :: forall m. Monad m => Site -> Config -> (ZettelStore, ZettelGraph) -> ZettelID -> HtmlT m ()
+renderZettel site@Site {siteSearch, siteZIndex} config@Config {..} (store, graph) zid = do
   let Zettel {..} = lookupStore zid store
       neuronTheme = Theme.mkTheme theme
   div_ [class_ "zettel-view"] $ do
@@ -169,20 +171,20 @@ renderZettel config@Config {..} (store, graph) zid = do
       div_ [class_ "ui top attached segment"] $ do
         h1_ [class_ "header"] $ toHtml zettelTitle
         let mmarkExts = neuronMMarkExts config
-        MMark.render $ useExtensions (linkActionExt store : mmarkExts) zettelContent
+        MMark.render $ useExtensions (linkActionExt site store : mmarkExts) zettelContent
         whenNotNull zettelTags $ \_ ->
-          renderTags zettelTags
+          renderTags site zettelTags
     div_ [class_ $ "ui inverted " <> Theme.semanticColor neuronTheme <> " top attached connections segment"] $ do
       div_ [class_ "ui two column grid"] $ do
         div_ [class_ "column"] $ do
           div_ [class_ "ui header"] "Connections"
           let forest = obviateRootUnlessForest zid $ dfsForestFrom [zid] graph
-          ul_ $ renderForest True (Just 2) LinkTheme_Simple store graph forest
+          ul_ $ renderForest site True (Just 2) LinkTheme_Simple store graph forest
         div_ [class_ "column"] $ do
           div_ [class_ "ui header"] "Navigate up"
           let forestB = obviateRootUnlessForest zid $ dfsForestBackwards zid graph
           ul_ $ do
-            renderForest True Nothing LinkTheme_Simple store graph forestB
+            renderForest site True Nothing LinkTheme_Simple store graph forestB
     div_ [class_ "ui inverted black bottom attached footer segment"] $ do
       div_ [class_ "ui equal width grid"] $ do
         div_ [class_ "center aligned column"] $ do
@@ -191,9 +193,9 @@ renderZettel config@Config {..} (store, graph) zid = do
           div_ [class_ "center aligned column"] $ do
             a_ [href_ $ urlPrefix <> toText (zettelIDSourceFileName zid), title_ "Edit this Zettel"] $ fa "fas fa-edit"
         div_ [class_ "center aligned column"] $ do
-          a_ [href_ (Rib.routeUrlRel Route_Search), title_ "Search Zettels"] $ fa "fas fa-search"
+          a_ [Rib.rref_ siteSearch, title_ "Search Zettels"] $ fa "fas fa-search"
         div_ [class_ "center aligned column"] $ do
-          a_ [href_ (Rib.routeUrlRel Route_ZIndex), title_ "All Zettels (z-index)"] $
+          a_ [Rib.rref_ siteZIndex, title_ "All Zettels (z-index)"] $
             fa "fas fa-tree"
     renderBrandFooter False
 
@@ -208,15 +210,15 @@ renderBrandFooter withVersion =
           " "
           code_ $ toHtml @Text neuronVersionFull
 
-renderTags :: Monad m => [Tag] -> HtmlT m ()
-renderTags tags = do
+renderTags :: Monad m => Site -> [Tag] -> HtmlT m ()
+renderTags site tags = do
   forM_ tags $ \tag -> do
     -- TODO: Ideally this should be at the top, not bottom. But putting it at
     -- the top pushes the zettel content down, introducing unnecessary white
     -- space below the title.
     span_ [class_ "ui black right ribbon label", title_ "Tag"] $ do
       a_
-        [ href_ (mkSingleTagQuery tag),
+        [ href_ (mkSingleTagQuery site tag),
           title_ ("See all zettels with tag '" <> unTag tag <> "'")
         ]
         $ toHtml (unTag tag)
@@ -228,6 +230,7 @@ fa k = with i_ [class_ k] mempty
 
 renderForest ::
   Monad m =>
+  Site ->
   Bool ->
   Maybe Int ->
   LinkTheme ->
@@ -235,7 +238,7 @@ renderForest ::
   ZettelGraph ->
   [Tree ZettelID] ->
   HtmlT m ()
-renderForest isRoot maxLevel ltheme s g trees =
+renderForest site isRoot maxLevel ltheme s g trees =
   case maxLevel of
     Just 0 -> mempty
     _ -> do
@@ -245,7 +248,7 @@ renderForest isRoot maxLevel ltheme s g trees =
                 div_
                   [class_ $ bool "" "ui black label" $ ltheme == LinkTheme_Default]
           bool id zettelDiv isRoot $
-            renderZettelLink ltheme s zid
+            renderZettelLink site ltheme s zid
           when (ltheme == LinkTheme_Default) $ do
             " "
             case backlinks zid g of
@@ -256,7 +259,7 @@ renderForest isRoot maxLevel ltheme s g trees =
                   i_ [class_ "fas fa-link", title_ $ zettelIDText zid2 <> " " <> zettelTitle z2] mempty
               _ -> mempty
           when (length subtrees > 0) $ do
-            ul_ $ renderForest False ((\n -> n - 1) <$> maxLevel) ltheme s g subtrees
+            ul_ $ renderForest site False ((\n -> n - 1) <$> maxLevel) ltheme s g subtrees
   where
     -- Sort trees so that trees containing the most recent zettel (by ID) come first.
     sortForest = reverse . sortOn maximum

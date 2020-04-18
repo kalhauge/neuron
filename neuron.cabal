@@ -64,6 +64,7 @@ common library-common
 library
   import: library-common
   exposed-modules:
+    Rib.Site
     Neuron.CLI
     Neuron.CLI.New
     Neuron.CLI.Rib

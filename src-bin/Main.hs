@@ -7,6 +7,7 @@ module Main where
 
 import Clay hiding (s, style, type_)
 import qualified Clay as C
+import qualified Data.Text.Lazy as TL
 import Development.Shake
 import Lucid
 import Main.Utf8
@@ -14,10 +15,11 @@ import Neuron.CLI (run)
 import Neuron.Config (Config)
 import qualified Neuron.Config as Config
 import Neuron.Web.Generate (generateSite)
-import Neuron.Web.Route (Route (..))
+import Neuron.Web.Route (Site (..), Route (..))
 import Neuron.Web.View (renderRouteBody, renderRouteHead, style)
 import Relude
 import qualified Rib
+import qualified Rib.Site as Rib
 import Rib.Extra.CSS (googleFonts, stylesheet)
 
 main :: IO ()
@@ -27,12 +29,12 @@ generateMainSite :: Action ()
 generateMainSite = do
   Rib.buildStaticFiles ["static/**"]
   config <- Config.getConfig
-  let writeHtmlRoute :: Route s g a -> (s, g, a) -> Action ()
-      writeHtmlRoute r = Rib.writeRoute r . Lucid.renderText . renderPage config r
+  let writeHtmlRoute :: Site -> Route s g a -> (s, g, a) -> Action TL.Text
+      writeHtmlRoute site r = pure . Lucid.renderText . renderPage site config r
   void $ generateSite config writeHtmlRoute ["*.md"]
 
-renderPage :: Config -> Route s g a -> (s, g, a) -> Html ()
-renderPage config r val@(s, _, _) = html_ [lang_ "en"] $ do
+renderPage :: Site -> Config -> Route s g a -> (s, g, a) -> Html ()
+renderPage site config r val@(s, _, _) = html_ [lang_ "en"] $ do
   head_ $ do
     renderRouteHead config r s
     case r of
@@ -47,7 +49,7 @@ renderPage config r val@(s, _, _) = html_ [lang_ "en"] $ do
           with (script_ mempty) [id_ "MathJax-script", src_ "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js", async_ ""]
   body_ $
     div_ [class_ "ui text container", id_ "thesite"] $
-      renderRouteBody config r val
+      renderRouteBody site config r val
 
 headerFont :: Text
 headerFont = "Oswald"
